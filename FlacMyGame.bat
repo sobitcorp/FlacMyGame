@@ -1,26 +1,26 @@
 @echo off
-setlocal enableextensions enabledelayedexpansion
+setlocal disabledelayedexpansion
 setlocal
-rem (c) SBT 2019
-set out=musmod_out
-set bkp=musmod_bkp
-set decode=flac:flac.exe:-dsfo`@fd@`@fs@:con,ogg:oggdec.exe:-qw`@fd@`@fs@:nul,mp3:lame.exe:--decode`--quiet`@fs@`@fd@:con,wav:copy:/y`@fs@`@fd@:nul
-set encode=flac:flac.exe:@oq@`-esfo`@fd@`@fs@:con,ogg:oggenc2.exe:@oq@`-Qo`@fd@`@fs@:con,mp3:lame.exe:@oq@`@fs@`@fd@:con
+rem (c) SoBiT 2019-2021
+set out=fmg_out
+set bkp=fmg_bkp
+set decode=flac:flac.exe:--totally-silent`-dfo`@fd@`@fs@:con,ogg:oggdec.exe:-qw`@fd@`@fs@:nul,mp3:lame.exe:--decode`--quiet`@fs@`@fd@:con,wav:@copy:/y`@fs@`@fd@:nul
+set encode=flac:flac.exe:@oqc@`-esfo`@fd@`@fs@:con,ogg:oggenc2.exe:@oqc@`-Qo`@fd@`@fs@:nul,mp3:lame.exe:@oqc@`@fs@`@fd@:con
 set edit=wavedit.exe
 set ftmp=~mmtmp.wav
 set tempdir=.
-set copybat=musmod_install.bat
+set copybat=flacMyGame_install.bat
+set locase=for %%n in (1 2) do if %%n==2 ( for %%# in (a b c d e f g h i j k l m n o p q r s t u v w x y z) do set "lcres=!lcres:%%#=%%#!") else set lcres=
+setlocal enableextensions enabledelayedexpansion
 
 set cfg=
 set select=
-set aext=
 set aexts=
 set bext=
 set bexts=
-set adir=
 set bdir=
-set aadir=
-set abdir=
+set bdirs=
+set bids=
 set aodir=
 set name=
 set updirchk=
@@ -35,63 +35,61 @@ set oname=
 set oprefix=
 set oext=
 set oq=
-set adec=
-set adecmd=
-set adecpar=
-set adecprn=
-set bdec=
-set bdecmd=
-set bdecpar=
-set bdecprn=
-set enc=
-set encmd=
-set encpar=
-set encprn=
+set oqb=
 set editcmd=
-set cta=
-set ctb=
-set cto=
+set ct=0
+set cto=0
+set ctn=0
+set obits=16
 if "%1"=="" goto load
 set select=%1
-if "%select:~0,1%"=="-" goto help
-if "%select:~0,4%"=="help" goto help
-if not "%select:.=%"=="%select%" (
+if .%select:~0,1%==.- goto help
+if .%select:~0,1%==./ goto help
+if .%select:~0,4%==.help goto help
+if not .%select%==. (
 	set cfg=%1
 	set select=%2
+	if "!cfg:.csv=!"=="!cfg!" (
+		set cfg=!cfg!.csv
+	)
 )
 goto load
 
 :help
-echo Usage: musmod [csv config file] [name of specific single music track to create]
+echo Usage: flacmygame [csv config file] [name of specific single music track to create]
 goto end
 
 :load
-echo musmod v1.0.0 by SBT
+echo flacMyGame v1.1.0 by SoBiT
+setlocal disabledelayedexpansion
 if "%cfg%"=="" (
 	for %%i in ("*.csv") do set cfg=%%~fi
 )
 if "%cfg%"=="" (
-	echo No configuration file found^^! Make sure a .csv file exists in this folder.
-	goto end
+	echo No configuration file found! Make sure a .csv file exists in this folder.
+	goto pause
 )
+set cfg="%cfg:^=^^%"
+set cfg=%cfg:!=^!%
+endlocal & set cfg=%cfg%
 if not exist "!cfg!" (
 	echo Configuration file !cfg! does not exist^^!
-	goto end
+	goto pause
 )
 echo Loading configuration !cfg!...
-for /f "usebackq tokens=* delims=," %%i in ("!cfg!") do (
+for /f "usebackq tokens=* delims=," %%i in (!cfg!) do (
 	set l=%%i
 	set l=!l: =`!
 	if "!l:~0,1!"=="$" goto loadok
 	if not "!l:~0,1!"=="#" (
-		set /a n=0
+		set n=0
 		set op=
 		for %%j in ("!l:,="^,"!") do (
 			set v=%%j
 			set v=!v:"=!
 			if !n!==0 ( 
 				set op=!v!
-			) else (
+			) else if not .!v!==. (
 				if !op!==0 (
 					if !n!==1 set name=!v!
 					if !n!==2 set updirchk=!v!
@@ -116,7 +114,9 @@ for /f "usebackq tokens=* delims=," %%i in ("!cfg!") do (
 					if !n!==1 set oname=!v!
 					if !n!==2 set oprefix=!v!
 					if !n!==3 set oext=!v!
-					if !n!==4 set oq=!v!
+					if !n!==4 set oq=!v:`= !
+					if !n!==5 set oqb=!v:`= !
+					if !n!==6 set obits=!v!
 				)
 				if !op!==4 set alook=!alook! "!v!"
 			)
@@ -128,117 +128,137 @@ for /f "usebackq tokens=* delims=," %%i in ("!cfg!") do (
 :loadok
 if "%title%"=="" (
 	echo [ERR] Configuration file is malformed^^!
-	goto end
+	goto pause
 )
+color 0a
 set aname=!aname:`= !
 set bname=!bname:`= !
 set oname=!oname:`= !
-set alook=!alook:`= !
+if not "%alook%"=="" set alook=!alook:`= !
 set aexts=!aexts:~1!
 set bexts=!bexts:~1!
-for /f "delims=" %%F in ("%tempdir%") do set atdir=%%~fF
-if "!atdir:~-1!"=="\" set atdir=!atdir:~,-1!
-del /q /f !atdir!\1!ftmp! >nul 2>&1
-del /q /f !atdir!\2!ftmp! >nul 2>&1
-del /q /f !atdir!\3!ftmp! >nul 2>&1
-for %%i in (. .. !alook!) do (
-	set l=%%i
-	set l=!l:"=!
-	for %%j in (!aexts!) do (
-		if "!aext!"=="" (
-			if exist "!l!\!aprefix!*.%%j" (
-				set adir=!l!
-				set aext=%%j
-			)
-		)
-	)
-	for %%j in (!bexts!) do (
-		if "!bext!"=="" (
-			if exist "!l!\!bprefix!*.%%j" (
-				set bdir=!l!
-				set bext=%%j
-			)
-		)
-	)
-)
 for %%i in (%decode%) do (
 	set l=%%i
-	set l=!l:`= !
-	for /f "tokens=1-4 delims=:" %%A in ("!l!") do (
-		if !aext!==%%A (
-			set adec=%%B
-			set adecpar=%%C
-			set adecprn=%%D
-		)
-		if !bext!==%%A (
-			set bdec=%%B
-			set bdecpar=%%C
-			set bdecprn=%%D
+	for /f "tokens=1-4 delims=:" %%a in ("!l:`= !") do (
+		set m=%%b
+		set decpar%%a=%%c
+		set decprn%%a=%%d
+		set decct%%a=0
+		if not "!m:@=!"=="%%b" (
+			set decmd%%a=!m:~1!
+			set decnm%%a=!m:~1!
+		) else (
+			set decmd%%a=
+			set decnm%%a=!m!
+			for %%j in (.. .) do (
+				if exist %%j\%%b (
+					setlocal disabledelayedexpansion
+					for /f "delims=" %%f in ("%%j\%%b") do set decmd%%a="%%~ff"
+					setlocal enabledelayedexpansion
+				)
+			)
 		)
 	)
 )
 for %%i in (%encode%) do (
 	set l=%%i
-	set l=!l:`= !
-	for /f "tokens=1-4 delims=:" %%A in ("!l!") do (
-		if !oext!==%%A (
-			set enc=%%B
-			set encpar=%%C
-			set encprn=%%D
+	for /f "tokens=1-4 delims=:" %%a in ("!l:`= !") do (
+		set m=%%b
+		set encpar%%a=%%c
+		set encprn%%a=%%d
+		if not "!m:@=!"=="%%b" (
+			set encmd%%a=!m:~1!
+			set encnm%%a=!m:~1!
+		) else (
+			set encmd%%a=
+			set encnm%%a=!m!
+			for %%j in (.. .) do (
+				if exist %%j\%%b (
+					setlocal disabledelayedexpansion
+					for /f "delims=" %%f in ("%%j\%%b") do set encmd%%a="%%~ff"
+					setlocal enabledelayedexpansion
+				)
+			)
 		)
 	)
 )
-set adecpar=%adecpar:@=^^!%
-set bdecpar=%bdecpar:@=^^!%
-set encpar=%encpar:@=^^!%
+setlocal disabledelayedexpansion
 for %%i in (.. .) do (
-	if exist %%i\!adec! set adecmd=%%i\!adec!
-	if exist %%i\!bdec! set bdecmd=%%i\!bdec!
-	if exist %%i\!enc! set encmd=%%i\!enc!
-	if exist %%i\!edit! set editcmd=%%i\!edit!
+	if exist %%i\%edit% (
+		for /f "delims=" %%f in ("%%i\%edit%") do set editcmd="%%~ff"
+	)
 )
-for /f "delims=" %%F in ("%adir%") do set aadir=%%~fF
-for /f "delims=" %%F in ("%bdir%") do set abdir=%%~fF
+for /f "delims=" %%F in ("%tempdir%") do set atdir=%%~fF
 for /f "delims=" %%F in ("%out%") do set aodir=%%~fF
-for /f "delims=" %%F in ("%adecmd%") do set adecmd="%%~fF"
-for /f "delims=" %%F in ("%bdecmd%") do set bdecmd="%%~fF"
-for /f "delims=" %%F in ("%encmd%") do set encmd="%%~fF"
-for /f "delims=" %%F in ("%editcmd%") do set editcmd="%%~fF"
-if "!aadir:~-1!"=="\" set aadir=!aadir:~,-1!
-if "!abdir:~-1!"=="\" set abdir=!abdir:~,-1!
+setlocal enabledelayedexpansion
+if "!atdir:~-1!"=="\" set atdir=!atdir:~,-1!
 if "!aodir:~-1!"=="\" set aodir=!aodir:~,-1!
-
-if "!aext!"=="" goto ready
-if "!bext!"=="" goto ready
-if not "!select!"=="" goto ready
-set /a cta=0
-set /a ctb=0
-set /a ctna=0
-set /a ctnb=0
-set /a cto=0
+del /q /f !atdir!\1!ftmp! >nul 2>&1
+del /q /f !atdir!\2!ftmp! >nul 2>&1
+del /q /f !atdir!\3!ftmp! >nul 2>&1
 set m=0
-for /f "usebackq tokens=* delims=," %%i in ("!cfg!") do (
+set nbids=0
+for /f "usebackq tokens=* delims=," %%i in (!cfg!) do (
 	set l=%%i
 	set l=!l: =`!
-rem	set xx=
-	if !m!==1 (
-	if not "!l:~0,1!"=="#" (
+	set t=
+	set op=
+	if !m!==1 if not "!l:~0,1!"=="#" (
+		set n=0
+		if "!l:~0,1!"=="$" goto load2
+		for %%j in ("!l:,="^,"!") do (
+			set v=%%j
+			set v=!v:"=!
+			if !n! GTR 2 (
+				if not "!v!"=="" set v=!v:`= !
+				set t=!t!,!v!
+			) else (
+				if !n!==0 (
+					set op=!v!
+					set bids=!bids!,!v!
+					set bdir!op!=
+					set ct!op!=0
+					set ctn!op!=0
+				)
+				if !n!==1 set bname!op!=!v:`= !
+				if !n!==2 set bsr!op!=!v!
+			)
+			set /a n+=1
+		)
+		set bdirs!op!=!t:~1!
+		set /a nbids+=1
+	)
+	if "!l:~0,1!"=="$" set /a m=m+1
+)
+
+:load2
+set bids=!bids:~1!
+set tb=
+set m=0
+for /f "usebackq tokens=* delims=," %%i in (!cfg!) do (
+	set l=%%i
+	set l=!l: =`!
+	if !m!==2 if not "!l:~0,1!"=="#" (
 		if "!l:~0,1!"=="$" goto ready
-		set /a n=0
-		set /a na=-1
+		set n=0
+		set bn=0
+		set na=-1
 		set /a cto+=1
 		for %%j in ("!l:,="^,"!") do (
 			set v=%%j
 			set v=!v:"=!
-rem			set xx=!xx! [!n! = !v!]
 			if !na! GEQ 0 (
 				if !na!==0 (
-rem echo edit !v! in [!ta!]
 					if !v!==1 set /a na=-1
 					if !v!==5 set /a na=-1
 					if not !na! GEQ 0 (
-						set /a cta+=1
-						if "!fta!"=="" set /a ctna+=1
+						call :findtrk "" !ta!
+						if .!ftres!==. ( 
+							set /a ctn+=1
+						) else ( 
+							set /a ct+=1
+							set /a decct!ftx!+=1
+						)
 					)
 				)
 				if !na! GEQ 0 set /a na+=1
@@ -246,67 +266,99 @@ rem echo edit !v! in [!ta!]
 			) else (
 				if !n!==0 (
 					set ta=!v!
-					call :findtrk a !v!
-					set fta=!ftres!
+					if not .!select!==. if /i not !select!==!v! set n=8
 				)
 				if !n!==1 (
-					if not !tb!==!v! (
-						set /a ctb+=1
-						set tb=!v!
-						call :findtrk b !v!
-						set ftb=!ftres!
-						if "!ftb!"=="" set /a ctnb+=1
+					if !nbids! LEQ 1 ( 
+						set tc=0
+						set /a n+=1
+					) else set tc=!v!
+				) 
+				if !n!==2 if not !tb!==!tc!!v! (
+					set tb=!tc!!v!
+					call :findtrk !tc! !v!
+					if .!ftres!==. (
+						set /a ctn!tc!+=1
+					) else (
+						set tc=!ftc!
+						set /a ct!tc!+=1
+						set /a decct!ftx!+=1
 					)
 				)
-				if !n!==6 set /a na=0
+				if !n!==7 set /a na=0
 			)
 			set /a n+=1
 		)
-	) )
-	if "!l:~0,1!"=="$" set m=1
-rem	echo !xx!
+	)
+	if "!l:~0,1!"=="$" set /a m=m+1
 )
 
 :ready
+set cta=0
+set ctna=0
+for %%m in (%bids%) do (
+	set /a cta=cta+!ct%%m!
+	set /a ctna=ctna+!ctn%%m!
+)
+rem echo !ct! !ct0! !ct1! !ct2! !ct9! :: !ctn! !ctn0! !ctn1! !ctn2! !ctn9! :: !cta! !ctna! !cto! :: !decctflac! !decctogg! !decctmp3! !decctwav!
 echo.
 echo !title:`= !
 echo !caption:`= !
 echo.
-if "!aext!"=="" echo [WARN] !aname! ^(!aprefix!*.{!aexts!}^) not found^^! Result will sound incorrect^^!
-if "!bext!"=="" (
-	echo [ERR] !bname! ^(!bprefix!*.{!bexts!}^) not found^^!
-	goto end
+if !cta!==0 (
+	if not .!select!==. (
+		echo [ERR] The given .csv file has no instructions for making !select!^^!
+		echo.      Please check your command-line arguments.
+	) else echo [ERR] !bname! ^(!bprefix!*.{!bexts!}^) not found^^!
+	goto pause
 )
-rem if "!adec!"=="" set adec=direct copy
-rem if "!bdec!"=="" set bdec=direct copy
-echo Using !cta! !aname! in !aadir!\!aprefix!*.!aext! with !adec!
+if !ct!==0 if not !ctn!==0 echo [WARN] !aname! ^(!aprefix!*.{!aexts!}^) not found^^! Result will sound incorrect^^!
+echo Using !cta! of the following !bname!:
+for %%m in (%bids%) do (
+	if not !ct%%m!==0 (
+		set e=!bext%%m!
+		for %%e in (!e!) do (
+			echo.   !ct%%m! !bname%%m! in !bdir%%m:"=!\!bprefix!*.%%e with !decnm%%e!
+		)
+	)
+)
 echo.
-echo Using !ctb! !bname! in !abdir!\!bprefix!*.!bext! with !bdec!
-echo.
-echo Write !cto! !oname! to !aodir!\!oprefix!*.!oext! with !enc! quality !oq!
+if not !ct!==0 (
+	echo Using !ct! !aname! in !bdir:"=!\!aprefix!*.!bext! with !decnm%bext%!
+	echo.
+)
+echo Write !cto! !oname! to !aodir!\!oprefix!*.!oext! with !encnm%oext%! quality !oq!
 echo.
 echo Using !atdir!\ as temporary directory
-if "!adec!"=="copy" set adecmd=copy
-if "!bdec!"=="copy" set bdecmd=copy
-if "!enc!"=="copy" set encmd=copy
-if "!adecmd!"=="" (
-	echo [ERR] Decoder !adec! not found^^!
-	goto end
+echo.
+for %%i in (%decode%) do (
+	for /f "tokens=1-2 delims=:" %%a in ("%%i") do (
+		if not !decct%%a!==0 if .!decmd%%a!==. (
+			echo [ERR] Decoder %%b not found^^!
+			goto download
+		)
+	)
 )
-if "!bdecmd!"=="" (
-	echo [ERR] Decoder !bdec! not found^^!
-	goto end
+if .!encmd%oext%!==. (
+	echo [ERR] Encoder !encnm%oext%! not found^^!
+	goto download
 )
-if "!encmd!"=="" (
-	echo [ERR] Encoder !enc! not found^^!
-	goto end
-)
-if "!editcmd!"=="" (
+if .!editcmd!==. (
 	echo [ERR] WAV editor !edit! not found^^!
-	goto end
+	goto download
 )
-if !ctna! GTR 0 echo [WARN] !ctna! of !cta! required !aname! not found^^!
-if !ctnb! GTR 0 echo [WARN] !ctnb! of !ctb! required !bname! not found^^!
+if not !ctna!==0 (
+	echo [WARN] !ctna! of !cto! required !bname! not found:
+	for %%m in (%bids%) do (
+		if not !ctn%%m!==0 (
+			echo.    Missing !ctn%%m! !bname%%m! !bname!^^!
+		)
+	)
+)
+if not !ctn!==0 (
+	set /a ctx=ctn+ct
+	echo [WARN] !ctn! of !ctx! required !aname! not found^^!
+)
 if not exist "!aodir!\" mkdir "!aodir!"
 if not exist "!aodir!\" (
 	echo [ERR] Can't create output directory !aodir!
@@ -318,35 +370,44 @@ if not exist "!atdir!\" (
 )
 echo.
 if "!select!"=="" (
-	echo Ready^^!
+	echo Ready^^! Please verify the above info is correct.
 	pause
 )
-
 
 echo.
 set k=0
 set m=0
 set ta=
 set tb=
-for /f "usebackq tokens=* delims=," %%i in ("!cfg!") do (
+for /f "usebackq tokens=* delims=," %%i in (!cfg!) do (
 	set l=%%i
 	set l=!l: =`!
-	if !m!==1 (
-		if !k!==1 (
-			if not !na! GEQ 0 call :convinit
-			set fs="!atdir!\2!ftmp!"
-			set fd="!aodir!\!oprefix!!ta!.!oext!"
-			set tcmd=!encmd!
-			set tpar=%encpar%
-			set tprn=!encprn!
-			call :runcmd
-			if not exist !fd! echo [ERR] Error encoding !oname:~,-1! !fd!
+	if !m!==2 if not "!l:~0,1!"=="#" (
+		for %%k in (0 1) do (
+			if !k!==1 (
+				if not !na! GEQ 0 call :convinit
+				rem !editcmd! resample "!atdir!\2!ftmp!" !sr!
+				set fs="!atdir!\2!ftmp!"
+				set fd="!aodir!\!oprefix!!ta:\=@!.!oext!"
+				set tcmd=!encmd%oext%!
+				set tpar=!encpar%oext%!
+				set tprn=!encprn%oext%!
+				set oqc=!oq!
+				if %%k==1 set oqc=!oqb!
+				call :runcmd
+				for %%i in (!fd!) do (
+					if %%~zi==0 del /q /f !fd! >nul 2>&1
+				)
+				if not exist !fd! (
+					if %%k==1 echo [ERR] Error encoding !oname:~,-1! !fd!
+				) else set k=0
+			)
 		)
 		del /q /f "!atdir!\2!ftmp!" >nul 2>&1
 		del /q /f "!atdir!\3!ftmp!" >nul 2>&1
 		if "!l:~0,1!"=="$" goto convdone
-		set /a n=0
-		set /a na=-1
+		set n=0
+		set na=-1
 		set k=0
 		set k2=0
 		set wsrate=100
@@ -356,105 +417,128 @@ for /f "usebackq tokens=* delims=," %%i in ("!cfg!") do (
 		for %%j in ("!l:,="^,"!") do (
 			set v=%%j
 			set v=!v:"=!
-			if !n!==0 (
-				if not "!l:~0,1!"=="#" (
-				if "!select!"=="" (
-					set k=1
-				) )
-				if "!v:#=!"=="!select!" set k=1
-			)
-			if !k!==1 (
-				if !na! GEQ 0 (
-					if !na!==0 set weop=!v!
-					if !na!==1 set wesrc=!v!
-					if !na!==2 set wedst=!v!
-					if !na!==3 (
-						set welen=!v!
-						if !k2!==0 (
-							if !weop!==1 set k2=1
-							if !weop!==5 set k2=1
-						)
-						if !k2!==1 (
-							set k2=2
-							if "!fta!"=="" (
-								echo [WARN] !aname:~,-1! !aadir!\!aprefix!*!ta!*.!aext! NOT FOUND^^! Result will sound incorrect^^!
-							) else (
-								set fs=!fta!
-								set fd="!atdir!\3!ftmp!"
-								set tcmd=!adecmd!
-								set tpar=%adecpar%
-								set tprn=!adecprn!
-								call :runcmd
-								if not exist "!atdir!\3!ftmp!" echo [WARN] Error decoding !aname:~,-1! !fta! ^^! Result will sound incorrect^^!
-								attrib -r "!atdir!\3!ftmp!"
+			if !na! GEQ 0 (
+				if !na!==0 set weop=!v!
+				if !na!==1 set wesrc=!v!
+				if !na!==2 set wedst=!v!
+				if !na!==3 (
+					set welen=!v!
+					if !k2!==0 (
+						if !weop!==1 set k2=1
+						if !weop!==5 set k2=1
+					)
+					if !k2!==1 (
+						set k2=2
+						call :findtrk "" !ta!
+						if .!ftres!==. (
+							echo [WARN] !aname:~,-1! !ta! ^(!aprefix!*.{!aexts!}^) NOT FOUND^^! Result may sound incorrect^^!
+							set n=8
+						) else (
+							set fs=!ftres!
+							set fd="!atdir!\3!ftmp!"
+							set tcmd=!decmd%bext%!
+							set tpar=!decpar%bext%!
+							set tprn=!decprn%bext%!
+							call :runcmd
+							for %%i in ("!atdir!\3!ftmp!") do (
+								if %%~zi==0 del /q /f "!atdir!\3!ftmp!" >nul 2>&1
 							)
-						)
-						if !weop!==1 !editcmd! copyext "!atdir!\2!ftmp!" "!atdir!\3!ftmp!" !wesrc! !wedst! !welen! .01
-						if !weop!==3 !editcmd! copy "!atdir!\2!ftmp!" !wesrc! !wedst! !welen! .01
-						if !weop!==7 !editcmd! rol "!atdir!\2!ftmp!" !wedst! !wesrc! !welen!
-						if !weop!==8 !editcmd! ror "!atdir!\2!ftmp!" !wedst! !wesrc! !welen!
-						if !weop!==5 (
-							if !k2!==2 (
-								set k2=3
-								!editcmd! resamp "!atdir!\3!ftmp!" -!wsrate!%%
-							)
-							!editcmd! copyext "!atdir!\2!ftmp!" "!atdir!\3!ftmp!" !wesrc! !wedst! !welen! .01
+							if not exist "!atdir!\3!ftmp!" echo [WARN] Error decoding !aname:~,-1! !fs! ^^! Result may sound incorrect^^!
+							attrib -r "!atdir!\3!ftmp!"
+							!editcmd! bitdepth "!atdir!\3!ftmp!" !obits!
+							!editcmd! resample "!atdir!\3!ftmp!" !sr!
 						)
 					)
-					if !na! GEQ 0 set /a na+=1
-					set /a na%%=4
-				) else (
-					if !n!==0 (
-						set ta=!v!
-						call :findtrk a !v!
-						set fta=!ftres!
-					)
-					if !n!==1 (
-						if not !tb!==!v! (
-							del /q /f "!atdir!\1!ftmp!" >nul 2>&1
-							call :findtrk b !v!
-							set ftb=!ftres!
-							if "!ftb!"=="" (
-								echo [ERR] !bname:~,-1! !abdir!\!bprefix!*!v!*.!bext! NOT FOUND^^!
-								set k=0
-							) else (
-								set fs=!ftb!
-								set fd="!atdir!\1!ftmp!"
-								set tcmd=!bdecmd!
-								set tpar=%bdecpar%
-								set tprn=!bdecprn!
-								call :runcmd
-								if not exist "!atdir!\1!ftmp!" (
-									echo [ERR] Error decoding !bname:~,-1! !ftb! ^^!
-									set k=0
-								) else set tb=!v!
-							)
+					if !weop!==1 !editcmd! copyext "!atdir!\2!ftmp!" "!atdir!\3!ftmp!" !wesrc! !wedst! !welen! .01
+					if !weop!==3 !editcmd! copy "!atdir!\2!ftmp!" !wesrc! !wedst! !welen! .01
+					if !weop!==7 !editcmd! rol "!atdir!\2!ftmp!" !wedst! !wesrc! !welen!
+					if !weop!==8 !editcmd! ror "!atdir!\2!ftmp!" !wedst! !wesrc! !welen!
+					if !weop!==5 (
+						if !k2!==2 (
+							set k2=3
+							!editcmd! resamp "!atdir!\3!ftmp!" -!wsrate!%%
 						)
+						!editcmd! copyext "!atdir!\2!ftmp!" "!atdir!\3!ftmp!" !wesrc! !wedst! !welen! .01
 					)
-					if !n!==2 set wsrate=!v!
-					if !n!==3 set wamp=!v!
-					if !n!==4 set wstart=!v!
-					if !n!==5 set wlen=!v!
-					if !n!==6 call :convinit
 				)
+				if !na! GEQ 0 set /a na+=1
+				set /a na%%=4
+			) else (
+				if !n!==0 (
+					set ta=!v!
+					if not .!select!==. if /i not !select!==!v! (
+						set n=8
+						set k=0
+					)
+				)
+				if !n!==1 (
+					if !nbids! LEQ 1 ( 
+						set tc=0
+						set /a n+=1
+					) else set tc=!v!
+				) 
+				if !n!==2 (
+					set tb=!tc!!v!
+					for %%c in (!tc!) do (
+						set sr=!bsr%%c!
+					)
+					del /q /f "!atdir!\1!ftmp!" >nul 2>&1
+					call :findtrk !tc! !v!
+					if .!ftres!==. (
+						for %%c in (!tc!) do (
+							echo [ERR] Track !v! of !bname%%e! !bname! ^(!bprefix!*.{!bexts!}^) NOT FOUND^^!
+						)
+						set n=8
+					) else (
+						set tc=!ftc!
+						set fs=!ftres!
+						set fd="!atdir!\1!ftmp!"
+						for %%c in (!tc!) do (
+							for %%e in (!bext%%c!) do (
+								set tcmd=!decmd%%e!
+								set tpar=!decpar%%e!
+								set tprn=!decprn%%e!
+							)
+						)
+						call :runcmd
+						for %%i in ("!atdir!\1!ftmp!") do (
+							if %%~zi==0 del /q /f "!atdir!\1!ftmp!" >nul 2>&1
+						)
+						if not exist "!atdir!\1!ftmp!" (
+							echo [ERR] Error decoding !bname:~,-1! !fs! ^^!
+							set n=8
+							set tb=
+						) else set k=1
+					)
+				)
+				if !n!==3 set wsrate=!v!
+				if !n!==4 set wamp=!v!
+				if !n!==5 set wstart=!v!
+				if !n!==6 set wlen=!v!
+				if !n!==7 call :convinit
 			)
 			set /a n+=1
 		)
 	)
-	if "!l:~0,1!"=="$" set m=1
+	if "!l:~0,1!"=="$" set /a m=m+1
 )
 goto convdone
 :convinit
-echo Generating !aprefix!!ta!.!aext!...
+echo Generating !oprefix!!ta!.!oext!...
+attrib -r "!atdir!\1!ftmp!"
+!editcmd! bitdepth "!atdir!\1!ftmp!" !obits!
+!editcmd! resample "!atdir!\1!ftmp!" !sr!
 del /q /f "!atdir!\2!ftmp!" >nul 2>&1
 copy /y "!atdir!\1!ftmp!" "!atdir!\2!ftmp!" >nul
 attrib -r "!atdir!\2!ftmp!"
 !editcmd! crop "!atdir!\2!ftmp!" !wstart! !wlen!
 !editcmd! amp "!atdir!\2!ftmp!" !wamp!
 !editcmd! setsamp "!atdir!\2!ftmp!" -!wsrate!%%
-set /a na=0
+set na=0
 goto end
 :runcmd
+set tpar=%tpar:@=^^!%
+set tpar=%tpar%
 setlocal disabledelayedexpansion
 set tpar=%tpar:?=!%
 %tcmd% %tpar% >%tprn% 2>&1
@@ -466,45 +550,44 @@ goto end
 del /q /f "!atdir!\1!ftmp!" >nul 2>&1
 del /q /f "!atdir!\2!ftmp!" >nul 2>&1
 del /q /f "!atdir!\3!ftmp!" >nul 2>&1
-if not "!select!"=="" goto end
+if not .!select!==. goto end
 set j=!copybat!
 set copybat=!aodir!\!copybat!
 echo @echo off>!copybat!
-echo setlocal enableextensions enabledelayedexpansion>>!copybat!
+echo setlocal enableextensions disabledelayedexpansion>>!copybat!
 echo rem Moves !oname! into !name! directory after making a backup>>!copybat!
 echo rem (c) SBT 2019>>!copybat!
 echo set ccdir=.>>!copybat!
 echo for /f "delims=" %%%%F in ("%%ccdir%%") do set ccdir=%%%%~fF>>!copybat!
-echo set cgdir=^^!ccdir^^!\..>>!copybat!
-echo for /f "delims=" %%%%F in ("%%cgdir%%") do set cgdir=%%%%~fF>>!copybat!
-echo if not exist "^!cgdir^!\!updirchk!" (>>!copybat!
-echo set cgdir=^^!ccdir^^!\..\..>>!copybat!
-echo for /f "delims=" %%%%F in ("^!cgdir^!") do set cgdir=%%%%~fF>>!copybat!
-echo )>>!copybat!
-echo if not exist "^!cgdir^!\!updirchk!" (>>!copybat!
-echo echo This program must be run from a subfolder inside your !name! directory^^^^^^^^^^!>>!copybat!
-echo echo ^^^^(^^!cgdir^^!\!updirchk! not found^^^^)>>!copybat!
+echo for %%%%i in (.. ..\.. ..\..\..) do (>>!copybat!
+echo if exist "%%ccdir%%\%%%%i\!updirchk!" (>>!copybat!
+echo for /f "delims=" %%%%F in ("%%ccdir%%\%%%%i") do set cgdir=%%%%~fF>>!copybat!
+echo ))>>!copybat!
+echo if not exist "%%cgdir%%\!updirchk!" (>>!copybat!
+echo echo This program must be run from a subfolder inside your !name! directory^^!>>!copybat!
+echo echo ^^^^(..\!updirchk! not found^^^^)>>!copybat!
 echo goto end>>!copybat!
 echo )>>!copybat!
-echo set cbdir=^^!cgdir^^!\!bkp!>>!copybat!
-echo for /f "delims=" %%%%F in ("%%cbdir%%") do set cbdir=%%%%~fF>>!copybat!
-echo if not exist "^!ccdir^!\!oprefix!*.!oext!" (>>!copybat!
+echo set cbdir="%%cgdir%%\!bkp!">>!copybat!
+echo for /f "delims=" %%%%F in (%%cbdir%%) do set cbdir=%%%%~fF>>!copybat!
+echo if not exist "%%ccdir%%\!oprefix!*.!oext!" (>>!copybat!
 echo echo Nothing to do.>>!copybat!
-echo echo ^^^^(^^!ccdir^^!\!oprefix!*.!oext! not found^^^^)>>!copybat!
+echo echo ^^^^("%%ccdir%%\!oprefix!*.!oext!" not found^^^^)>>!copybat!
 echo goto end>>!copybat!
 echo )>>!copybat!
-echo if exist "^!cbdir^!\!oprefix!*.!oext!" (>>!copybat!
+echo if exist "%%cbdir%%\!oprefix!*.!oext!" (>>!copybat!
 echo echo Backup folder is not empty^^!>>!copybat!
-echo echo Please make sure there's nothing important in it, empty it and try again^^^^^^^^^^!>>!copybat!
-echo echo ^^^^(^^!cbdir^^!\!oprefix!*.!oext! already exist^^^^)>>!copybat!
+echo echo Please make sure there's nothing important in it, empty it and try again^^!>>!copybat!
+echo echo ^^^^("%%cbdir%%\!oprefix!*.!oext!" already exist^^^^)>>!copybat!
 echo goto end>>!copybat!
 echo )>>!copybat!
+echo setlocal enabledelayedexpansion>>!copybat!
 echo echo.>>!copybat!
 echo echo Ready to move !oname! into !name! directory.>>!copybat!
 echo echo A backup will first be created of any files that will be replaced.>>!copybat!
 echo echo.>>!copybat!
 echo echo Moving from: ^^!ccdir^^!\!oprefix!*.!oext!>>!copybat!
-echo echo Moving to: ^^!cgdir^^!\!oprefix!*.!oext!>>!copybat!
+echo echo Moving to: ^^!cgdir^^!\!aprefix!*.!oext!>>!copybat!
 echo echo Backing up existing files in: ^^!cbdir^^!\>>!copybat!
 echo echo.>>!copybat!
 echo pause>>!copybat!
@@ -514,8 +597,15 @@ echo echo Can't create backup directory ^^!cbdir^^!>>!copybat!
 echo goto end>>!copybat!
 echo )>>!copybat!
 echo for %%%%i in ("^!ccdir^!\!oprefix!*.!oext!") do (>>!copybat!
-echo move /y "^!cgdir^!\%%%%~nxi" "^!cbdir^!\" ^>nul 2^>^&^1>>!copybat!
-echo move /y "%%%%~fi" "^!cgdir^!\" ^>nul>>!copybat!
+echo set fn=?!aprefix!%%%%~ni.!oext!>>!copybat!
+echo set fn=^^!fn:?%oprefix%=^^!>>!copybat!
+echo set fn=^^!fn:@=\^^!>>!copybat!
+echo move /y "^!cgdir^!\^!fn^!" "^!cbdir^!\%%%%~ni.!oext!" ^>nul 2^>^&^1>>!copybat!
+echo setlocal disabledelayedexpansion>>!copybat!
+echo set op=move /y "%%%%~fi">>!copybat!
+echo setlocal enabledelayedexpansion>>!copybat!
+echo ^^!op^^! "^!cgdir^!\^!fn^!" ^>nul>>!copybat!
+echo endlocal ^& endlocal>>!copybat!
 echo )>>!copybat!
 echo echo.>>!copybat!
 echo echo Finished^^^^^^^^^^!>>!copybat!
@@ -531,8 +621,7 @@ if not exist ..\!updirchk! (
 	echo.
 	echo The !aname! will be backed up automatically.
 	echo.
-	pause
-	goto end
+	goto pause
 )
 cd !aodir!
 !copybat!
@@ -542,42 +631,147 @@ goto end
 
 :findtrk
 set ftres=
-set ftn=
-set /a i=%2
-if %i%==%2 set ftn=%2
-set ftp=^^!a%1dir^^!\^^!%1prefix^^!
-set fte=.^^!%1ext^^!
-set ftp=%ftp%
-set fte=%fte%
+set ftc=%1
+set ftc=%ftc:"=%
+if .%mmdebug%==.. echo FT: %1 ^| %2 ^| %3 =  !bdir%ftc%! ^| !bext%ftc%! ^| !bdirs%ftc%!
+
+if .!bdir%ftc%!==."?" (
+	if .%ftc% ==.0 goto end
+	if .%ftc%==. goto end
+	call :findtrk 0 %2 %1
+	goto end
+)
+if .!bdir%ftc%!==. (
+	call :finddir %ftc%
+	goto findtrk
+)
+set e=!bext%ftc%!
+set ftk=%bprefix%
+if .%ftc%==. (
+	set ftk=%aprefix%
+)
+set p=!bdir%ftc%!
+set p=!p:"=!\%ftk%
+if .%ftc%==.0 if not .%3==. set p=!p!*%3
 setlocal disabledelayedexpansion
-if "%ftn%"=="" (
-	if exist "%ftp%%2%fte%" set ftres="%ftp%%2%fte%"
+set n=
+set /a n=%2
+if not .%n%==.%2 set n=
+if .%n%==. (
+	if exist "%p%%2.%e%" set ftres="%p%%2.%e%"
 	goto findtrke
 )
-rem if x%ftres%==x for %%i in ("%ftp%*00%ftn%*%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%*00%ftn%-*%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%*00%ftn%.*%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%*00%ftn% *%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%*-0%ftn%*%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%*0%ftn%-*%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%*0%ftn%.*%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%* 0%ftn% *%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%* 0%ftn%*%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%*0%ftn% *%fte%") do set ftres="%%~fi"
-rem if x%ftres%==x for %%i in ("%ftp%*0%ftn%*%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%*-%ftn%*%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%*%ftn%-*%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%*%ftn%.*%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%* %ftn% *%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%* %ftn%*%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%*%ftn% *%fte%") do set ftres="%%~fi"
-if x%ftres%==x for %%i in ("%ftp%*%ftn%*%fte%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%00%n% - *%e%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%0%n% - *%e%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%%n% - *%e%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%00%n%-*%e%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%0%n%-*%e%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%%n%-*%e%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%00%n%. *%e%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%0%n%. *%e%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%%n%. *%e%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%00%n%.*%e%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%0%n%.*%e%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%%n%.*%e%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%00%n% *%e%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%0%n% *%e%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%%n% *%e%") do set ftres="%%~fi"
+if .%ftc%==.0 if .%ftres%==. for %%i in ("%p%*%n%*%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*00%n% - *%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*0%n% - *%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*%n% - *%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*00%n%-*%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*0%n%-*%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*%n%-*%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*00%n%. *%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*0%n%. *%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*%n%. *%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*00%n%.*%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*0%n%.*%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*%n%.*%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%* 0%n% *%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*00%n% *%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*0%n% *%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%* %n% *%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%* 0%n%*%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*-0%n%*%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*-%n%*%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*%n% *%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%* %n%*%e%") do set ftres="%%~fi"
+if .%ftres%==. for %%i in ("%p%*%n%*%e%") do set ftres="%%~fi"
 :findtrke
-if not x%ftres%==x set ftres=%ftres:!=?%
-endlocal & set ftres=%ftres%
-rem echo [%0] [%1] [%2] = #%ftn% - %ftp% %fte% = %ftres%
+if not .%ftres%==. (
+	for %%i in (%ftres%) do set ftx=%%~xi
+	set ftres=%ftres:^=^^%
+	set ftres=%ftres:!=?%
+)
+endlocal & set ftres=%ftres%& set ftx=%ftx%
+if not .%ftres%==. (
+	%locase%!ftx:~1!
+	set ftx=!lcres!
+)
+if .%mmdebug%==.. echo FTRES :: %ftres% : %ftx%
 goto end
 
+:finddir
+if .%mmdebug%==.. echo FD: %1 ^| %2 ^| %3 ^| %4 ^| %5 ^| %6
+
+set e=%bexts%
+set p=%bprefix%
+if .%1==. (
+	set e=%aexts%
+	set p=%aprefix%
+)
+set fdt=.
+set fdr=
+if not .!bdirs%1!==. set fdt="!bdirs%1:,=" "!"
+for %%i in (%e%) do (
+	for %%j in (!fdt!) do (
+	for /f "tokens=*" %%x in ("%%j") do (
+		for %%k in ("." ".." "..\.." %alook%) do (
+		for /f "tokens=*" %%y in (%%k) do (
+			set fdk=%%y\*%%x*
+			set fdk="!fdk:"=!"
+			if .%%j==.. set fdk=!fdk! %%y\.
+			for /d %%l in (!fdk!) do (
+ 				if .%mmdebug%==.. echo SSS %%i ^| %%j ^| %%k ^| %%l  ==  !fdk!: %%l\%p%*.%%i"
+				echo "%%l"|findstr /i %%x >nul && (
+					setlocal disabledelayedexpansion
+					if exist %%l\%p%*.%%i (
+						endlocal
+						set u=
+						set d=%%~fl
+						for %%m in (%bids%) do (
+							if .!bdir%%m!==.!d! set u=1
+						)
+						if .!bdir!==.!d! set u=1
+						if .!u!==. (
+							set bext%1=%%i
+							setlocal disabledelayedexpansion
+							set fdr=%%~fl
+							goto finddire
+						)
+					) else endlocal
+				)
+			)
+		))
+	))
+)
+setlocal disabledelayedexpansion
+set fdr=?
+:finddire
+set fdr="%fdr:^=^^%"
+set fdr=%fdr:!=^!%
+endlocal & set bdir%1=%fdr%
+goto end
+
+:download
+echo.      Please download the latest release - this file is included.
+echo.      Visit github.com/sobitcorp/flacmygame
+echo.
+:pause
+pause
+goto end
 
 
 goto end

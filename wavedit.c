@@ -70,6 +70,9 @@ copy <file> <source-pos> <dest-pos> [<length> [<transition>]]
 copyext <file> <source-file> <source-pos> [<dest-pos> [<length> [<transition>]]]
   Same as above, but use another file as source.
   If dest-pos not given, it will equal source-pos.
+
+bitdepth <file> <bits-per-sample>
+  Convert file's bit depth to the given value.
 ");
 exit(0);
 }
@@ -113,7 +116,7 @@ FILE* openFile(char* path, int readonly){
 	return fp;
 }
 
-int readWav(FILE* fp, wavhdr* hdr, unsigned char** data, int* datalen){
+int readWav(FILE* fp, wavhdr* hdr, unsigned char** data, int* datalen, int bitop){
 	int ret = 0;
 	int l, hl = sizeof(wavhdr), dl;
 	if (hl != fread(hdr, 1, hl, fp)){
@@ -130,7 +133,7 @@ int readWav(FILE* fp, wavhdr* hdr, unsigned char** data, int* datalen){
 		printf("[ERR] File is not a WAV file!\n");
 		exit(-6);
 	}
-	if (hdr->bitdepth != 8 && hdr->bitdepth != 16 && hdr->bitdepth != 32){
+	if (hdr->bitdepth != 8 && hdr->bitdepth != 16 && hdr->bitdepth != 32 && (hdr->bitdepth != 24 || !bitop)){
 		printf("[ERR] File has unsupported bit depth: %d\n", hdr->bitdepth);
 		exit(-6);
 	}
@@ -215,8 +218,8 @@ void transition(unsigned char *ndp, unsigned char *odp, unsigned char *odi, unsi
 
 
 int main(int argc, char** argv){
-	const char* ops[] = {"trim","crop","setsamp","resamp","amp","rol","ror","copyex","copy"};
-	const char opcs[] = {10,11,20,21,30,40,41,51,50};
+	const char* ops[] = {"trim","crop","setsamp","resamp","amp","rol","ror","copyex","copy","bitdepth"};
+	const char opcs[] = {10,11,20,21,30,40,41,51,50,60};
 
 	int op, ival1, ival2;
 	char *file1, *file2 = 0;
@@ -292,13 +295,20 @@ int main(int argc, char** argv){
 		len = (argc > 5+j ? readDbl(argv[5+j]) : 0);
 		vtrans = (argc > 6+j ? readDbl(argv[6+j]) : 0);
 		break;
+	case 60:	//convert bitdepth
+		ival1 = readIntRng(argv[3], 8, 32);
+		if (ival1%8) {
+			printf("[ERR] Bad arguments: Bit depth must be a multiple of 8!\n");
+			return -2;
+		}
+		break;
 	}
 
 	fp = openFile(file1, 0);					//get ready
-	readWav(fp, &wh, &wd, &wdl);
+	readWav(fp, &wh, &wd, &wdl, op==60?1:0);
 	if (file2) {
 		fpe = openFile(file2, 1);
-		readWav(fpe, &whe, &wde, &wdle);
+		readWav(fpe, &whe, &wde, &wdle, 0);
 	}
 	wbps = wh.chans * (wh.bitdepth/8);
 	wbpse = whe.chans * (whe.bitdepth/8);
@@ -346,6 +356,9 @@ int main(int argc, char** argv){
 	case 41:
 		if (ssp < 0) ssp = 0;
 		if (ssp + slen > wdl) slen = wdl - ssp;
+		break;
+	case 60:
+		if (ival1 == wh.bitdepth) return 1;
 		break;
 	}
 	tc = wh.chans;
@@ -480,6 +493,27 @@ int main(int argc, char** argv){
 		transition(nd + sdp, od + sdp, od, od+wdl, strans, tb);
 		transition(nd + sdp + l, od + sdp + l, od, od+wdl, -strans, tb);
 		break;
+	case 60:				//convert bitdepth
+		nd = wd;
+		ndl = wdl/tb*(ival1/8);
+		if (ndl > wdl)
+			nd = kmalloc(ndl);
+		wh.bitdepth = ival1;
+		ival1/=8;
+		if (tb == 1)
+			for (i=0; i < wdl; i++)
+				wd[i] = wd[i]+0x80;
+		for (i=0, j=0; i < slen; i++) {
+			if (i%tb==0)
+				for (l=0; l < ival1-tb; l++)
+					nd[j++] = 0x80;
+			if (i%tb >= tb-ival1)
+				nd[j++] = wd[i];
+		}
+		if (ival1 == 1)
+			for (i=0; i < ndl; i++)
+				nd[i] = nd[i]+0x80;
+		break;
 	}
 	
 	writeWav(fp, wh, nd, ndl);
@@ -488,4 +522,6 @@ int main(int argc, char** argv){
 
 	return 0;
 }
+
+
 

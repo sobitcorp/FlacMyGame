@@ -1,11 +1,13 @@
-# In-game name, OST#, Pitch/speed (%), Amplification (dB), Start (sec), Length (sec), Notes, Splice1 opcode, Splice1 src start (sec), Splice1 dest start / offset value (sec), Splice1 length (sec), Splice2 opcode, ...
-# Splice opcodes: 1-copy from in-game audio; 3-copy within output file; 5-copy from in-game audio with resample; 8-right-rotate within output file
-0,Undertale,undertale.exe,=== Undertale lossless music upgrade mod by SBT ===,Replace low-quality stock game music with lossless music from the OST^^^!
+# (c) SoBiT 2019
+0,UNDERTALE,undertale.exe,=== UNDERTALE lossless music patcher by SoBiT ===,Upgrade low-quality game music with lossless music from the OST^^^!
 1,stock music tracks,mus_,ogg
 2, OST  music tracks,,flac,mp3,wav
-3,modded tracks,mus_,ogg,-q10
-4,mus,ost,soundtrack,undertale`soundtrack,mus\ok,..\mus,..\ost,..\soundtrack,..\undertale`soundtrack
+3,modded tracks,mus_,ogg,-b500 --managed,-q10
 $
+0,UNDERTALE,44100,undertale soundtrack,undertale ost,soundtrack,ost,mus,.
+$
+# In-game name, OST Track#, Pitch/speed (%), Amplification (dB), Start (sec), Length (sec), Notes, Splice1 opcode, Splice1 src start (sec), Splice1 dest start / offset value (sec), Splice1 length (sec), Splice2 opcode, ...
+# Splice opcodes: 1-copy from in-game audio; 3-copy within output file; 5-copy from in-game audio with resample; 8-right-rotate within output file
 story,1,89.5,-2.4,0,0,OST ver has lower pitch (97.9% of original). corrected at the expense of timing (barely noticeable),8,13,0.2,0,8,26.1,0.27,0
 menu0,2,100,1,0,0
 flowey,3,100,-4.92,0,0
